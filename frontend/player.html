@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Player</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: transparent; padding: 8px; }
+
+        .player-layout { display: flex; gap: 16px; width: 100%; }
+        .video-side { flex: 3; }
+        .gauge-side {
+            flex: 1; min-width: 160px;
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            padding-top: 8px;
+        }
+
+        /* Semicircle Gauge */
+        .gauge-wrap { position: relative; width: 160px; height: 95px; overflow: hidden; }
+        .gauge-svg { width: 160px; height: 95px; }
+        .gauge-bg-arc { fill: none; stroke: #e8e8e8; stroke-width: 14; stroke-linecap: round; }
+        .gauge-fill-arc {
+            fill: none; stroke-width: 14; stroke-linecap: round;
+            transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+        }
+        .gauge-pct { font-size: 32px; font-weight: 700; }
+        .gauge-lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+        .gauge-title { font-size: 13px; font-weight: 700; color: #444; text-align: center; }
+
+        /* Buttons */
+        .ctrl-row { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
+        .ctrl-btn {
+            flex: 1; min-width: 65px; padding: 9px 3px; color: white; border: none;
+            border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600;
+            transition: transform 0.12s, box-shadow 0.12s; text-align: center;
+        }
+        .ctrl-btn:hover {
+            transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            filter: brightness(1.1);
+        }
+        .ctrl-btn:active { transform: translateY(0); }
+        .ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .status-bar {
+            margin-top: 6px; padding: 5px 10px; font-size: 0.75rem; color: #555;
+            background: rgba(0,0,0,0.04); border-radius: 6px; min-height: 24px;
+        }
+        .warn-box {
+            display: none; padding: 6px 10px; border-radius: 8px; text-align: center;
+            font-size: 0.78rem; font-weight: 600; margin-top: 4px; width: 100%;
+        }
+        #player-wrap {
+            border-radius: 12px; overflow: hidden;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+        }
+        /* Summary overlay - PROMINENT */
+        .summary-overlay {
+            display: none; margin-top: 10px; padding: 18px 20px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            border-radius: 14px; color: #e0e0e0; font-size: 0.9rem;
+            line-height: 1.7; max-height: 350px; overflow-y: auto;
+            box-shadow: 0 6px 30px rgba(15,52,96,0.5);
+            border: 1px solid rgba(52,152,219,0.3);
+        }
+        .summary-overlay h3 {
+            margin: 0 0 10px 0; font-size: 1.15rem; color: #3498db;
+            border-bottom: 1px solid rgba(52,152,219,0.3); padding-bottom: 8px;
+        }
+        .summary-overlay strong { color: #f39c12; }
+        .summary-overlay em { color: #1abc9c; }
+    </style>
+</head>
+<body>
+    <div class="player-layout">
+        <div class="video-side">
+            <div id="player-wrap">
+                <div id="yt-player"></div>
+            </div>
+
+            <div class="ctrl-row">
+                <button onclick="doPlay()" class="ctrl-btn" id="btn-play"
+                    style="background:linear-gradient(135deg,#27ae60,#2ecc71);">▶ Play</button>
+                <button onclick="doPause()" class="ctrl-btn" id="btn-pause"
+                    style="background:linear-gradient(135deg,#e67e22,#f39c12);">⏸ Pause</button>
+                <button onclick="doRewind()" class="ctrl-btn" id="btn-rw"
+                    style="background:linear-gradient(135deg,#3498db,#2980b9);">⏪ −10s</button>
+                <button onclick="doSkip()" class="ctrl-btn" id="btn-ff"
+                    style="background:linear-gradient(135deg,#9b59b6,#8e44ad);">⏩ +30s</button>
+                <button onclick="doSlow()" class="ctrl-btn" id="btn-slow"
+                    style="background:linear-gradient(135deg,#1abc9c,#16a085);">🐢 0.75×</button>
+                <button onclick="doNormal()" class="ctrl-btn" id="btn-norm"
+                    style="background:linear-gradient(135deg,#34495e,#2c3e50);">1× Normal</button>
+                <button onclick="doFast()" class="ctrl-btn" id="btn-fast"
+                    style="background:linear-gradient(135deg,#e74c3c,#c0392b);">🐇 2×</button>
+            </div>
+
+            <div class="status-bar" id="status">⏳ Loading YouTube player...</div>
+            <div class="summary-overlay" id="summaryBox">
+                <h3>📝 Video Summary</h3>
+                <div id="summaryContent"></div>
+            </div>
+        </div>
+
+        <div class="gauge-side">
+            <div class="gauge-title">Video Fatigue</div>
+            <div class="gauge-wrap">
+                <svg class="gauge-svg" viewBox="0 0 160 90">
+                    <!-- Semicircle background arc -->
+                    <path d="M 15 80 A 65 65 0 0 1 145 80" class="gauge-bg-arc"/>
+                    <!-- Semicircle fill arc -->
+                    <path d="M 15 80 A 65 65 0 0 1 145 80" class="gauge-fill-arc" id="gaugeFill"
+                        stroke="#27ae60"
+                        stroke-dasharray="204"
+                        stroke-dashoffset="204"/>
+                    <!-- Percentage text -->
+                    <text x="80" y="65" class="gauge-pct" text-anchor="middle" id="gaugeVal"
+                        fill="#333">0%</text>
+                    <!-- Label text -->
+                    <text x="80" y="82" class="gauge-lbl" text-anchor="middle" id="gaugeLbl"
+                        fill="#888">ENGAGED</text>
+                </svg>
+            </div>
+            <div class="warn-box" id="warnBox"></div>
+        </div>
+    </div>
+
+    <!-- YouTube IFrame API -->
+    <script>
+        // Read params from URL
+        var params = new URLSearchParams(window.location.search);
+        var VIDEO_ID = params.get('v') || '';
+        var SESSION_ID = params.get('sid') || '';
+        var API_URL = params.get('api') || 'http://localhost:8000';
+
+        var player = null;
+        var currentRate = 1.0;
+        var eventCount = 0;
+        var gaugeEl = document.getElementById('gaugeFill');
+        var valEl = document.getElementById('gaugeVal');
+        var lblEl = document.getElementById('gaugeLbl');
+        var statusEl = document.getElementById('status');
+        var warnEl = document.getElementById('warnBox');
+        var summaryBox = document.getElementById('summaryBox');
+        var summaryContent = document.getElementById('summaryContent');
+
+        // Semicircle arc length = PI * radius = PI * 65 ≈ 204
+        var arcLength = 204;
+
+        // Local fatigue tracking for instant visual feedback
+        var localFatigue = 0.0;
+        var summaryShown = false;  // Once true, summary stays static
+
+        // Impact per button — small gradual changes (~5% each)
+        var BUTTON_IMPACTS = {
+            'play':         -0.03,
+            'pause':         0.03,
+            'seek_back':     0.02,
+            'seek_fwd':      -0.03,
+            'speed_slow':    0.02,
+            'speed_normal':  0.00,
+            'speed_fast':    -0.04
+        };
+
+        // 1. Load YouTube IFrame API script
+        var tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(tag);
+
+        // 2. YouTube calls this when API is ready
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('yt-player', {
+                height: '340',
+                width: '100%',
+                videoId: VIDEO_ID,
+                playerVars: {
+                    'autoplay': 0,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'enablejsapi': 1
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+
+        function onPlayerReady(event) {
+            statusEl.textContent = '✅ Player ready — use buttons to control video';
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data == 1) {
+                sendFatigueEvent('play', 0, player.getPlaybackRate());
+            } else if (event.data == 2) {
+                sendFatigueEvent('pause', 0, player.getPlaybackRate());
+            }
+        }
+
+        // ─── Semicircle Gauge ───────────────────────────────────────
+        function updateGauge(score, label) {
+            var pct = Math.round(score * 100);
+            var offset = arcLength - (score * arcLength);
+            gaugeEl.style.strokeDashoffset = offset;
+
+            var colors = {
+                'ENGAGED': '#27ae60', 'NEUTRAL': '#f39c12',
+                'STRUGGLING': '#e67e22', 'FATIGUED': '#e74c3c'
+            };
+            gaugeEl.style.stroke = colors[label] || '#95a5a6';
+            valEl.textContent = pct + '%';
+            lblEl.textContent = label;
+            valEl.setAttribute('fill', colors[label] || '#333');
+
+            if (label === 'STRUGGLING' || label === 'CRITICAL') {
+                warnEl.style.display = 'block';
+                if (label === 'CRITICAL') {
+                    warnEl.style.background = 'linear-gradient(135deg, #fab1a0, #e74c3c)';
+                    warnEl.style.color = 'white';
+                    warnEl.textContent = '🛑 High fatigue!';
+                } else {
+                    warnEl.style.background = 'linear-gradient(135deg, #ffeaa7, #fdcb6e)';
+                    warnEl.style.color = '#856404';
+                    warnEl.textContent = '⚠ Slowing down?';
+                }
+            } else {
+                warnEl.style.display = 'none';
+            }
+        }
+
+        function getLabel(score) {
+            if (score < 0.25) return 'ENGAGED';
+            if (score < 0.50) return 'NEUTRAL';
+            if (score < 0.75) return 'STRUGGLING';
+            return 'FATIGUED';
+        }
+
+        // Instant local gauge update (before server responds)
+        function instantUpdate(buttonType) {
+            var impact = BUTTON_IMPACTS[buttonType] || 0;
+            localFatigue = Math.max(0, Math.min(1, localFatigue + impact));
+            updateGauge(localFatigue, getLabel(localFatigue));
+        }
+
+        // ─── Fatigue Event ──────────────────────────────────────────
+        function sendFatigueEvent(eventType, seekDelta, rate) {
+            eventCount++;
+            var pos = player ? Math.floor(player.getCurrentTime()) : 0;
+            fetch(API_URL + '/video-interact', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: SESSION_ID,
+                    event_type: eventType,
+                    video_id: VIDEO_ID,
+                    position_sec: pos,
+                    playback_rate: rate || currentRate,
+                    seek_delta_sec: seekDelta || 0,
+                    topic: ''
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                var fs = data.fatigue_state || {};
+                var score = fs.score || 0;
+                var label = fs.label || 'ENGAGED';
+
+                // Blend local gauge smoothly toward server (no sudden jumps)
+                // 80% local + 20% server = very stable visual
+                localFatigue = localFatigue * 0.8 + score * 0.2;
+                updateGauge(localFatigue, label);
+
+                var pct = Math.round(score * 100);
+                statusEl.textContent = '📊 Fatigue: ' + pct + '% (' + label + ') | Pos: ' + pos + 's';
+
+                // Show summary ONCE — then keep it static
+                if (!summaryShown && data.summary && data.summary.summary_markdown) {
+                    summaryShown = true;
+                    summaryBox.style.display = 'block';
+                    summaryContent.innerHTML = data.summary.summary_markdown
+                        .replace(/\n/g, '<br>')
+                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.+?)\*/g, '<em>$1</em>');
+                    statusEl.textContent = '📝 Summary generated! Fatigue: ' + pct + '%';
+                }
+            })
+            .catch(e => {
+                statusEl.textContent = '⚠ Backend error: ' + e.message;
+            });
+        }
+
+        // ─── Button Handlers (DO NOT MODIFY player control logic) ───
+        function doPlay() {
+            if (!player) return;
+            player.playVideo();
+            instantUpdate('play');
+            statusEl.textContent = '▶ Playing...';
+        }
+
+        function doPause() {
+            if (!player) return;
+            player.pauseVideo();
+            instantUpdate('pause');
+            sendFatigueEvent('pause', 0, currentRate);
+            statusEl.textContent = '⏸ Paused';
+        }
+
+        function doRewind() {
+            if (!player) return;
+            var t = player.getCurrentTime();
+            var newT = Math.max(0, t - 10);
+            player.seekTo(newT, true);
+            instantUpdate('seek_back');
+            sendFatigueEvent('seek', -10, currentRate);
+            statusEl.textContent = '⏪ Rewound to ' + Math.floor(newT) + 's';
+        }
+
+        function doSkip() {
+            if (!player) return;
+            var t = player.getCurrentTime();
+            var newT = t + 30;
+            player.seekTo(newT, true);
+            instantUpdate('seek_fwd');
+            sendFatigueEvent('seek', 30, currentRate);
+            statusEl.textContent = '⏩ Skipped to ' + Math.floor(newT) + 's';
+        }
+
+        function doSlow() {
+            if (!player) return;
+            currentRate = 0.75;
+            player.setPlaybackRate(0.75);
+            instantUpdate('speed_slow');
+            sendFatigueEvent('speed_change', 0, 0.75);
+            statusEl.textContent = '🐢 Speed: 0.75×';
+        }
+
+        function doNormal() {
+            if (!player) return;
+            currentRate = 1.0;
+            player.setPlaybackRate(1.0);
+            instantUpdate('speed_normal');
+            sendFatigueEvent('speed_change', 0, 1.0);
+            statusEl.textContent = '▶ Speed: 1×';
+        }
+
+        function doFast() {
+            if (!player) return;
+            currentRate = 2.0;
+            player.setPlaybackRate(2.0);
+            instantUpdate('speed_fast');
+            sendFatigueEvent('speed_change', 0, 2.0);
+            statusEl.textContent = '🐇 Speed: 2×';
+        }
+    </script>
+</body>
+</html>

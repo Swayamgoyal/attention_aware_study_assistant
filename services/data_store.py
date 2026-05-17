@@ -89,6 +89,35 @@ class QuizRecord(Base):
     difficulty = Column(Integer, nullable=True)
 
 
+class VideoEventLog(Base):
+    """Logs video player events for fatigue tracking."""
+    __tablename__ = "video_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, nullable=False, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    event_type = Column(String, nullable=False)
+    video_id = Column(String, nullable=True)
+    position_sec = Column(Integer, default=0)
+    playback_rate = Column(Float, default=1.0)
+    seek_delta_sec = Column(Integer, default=0)
+    fatigue_score = Column(Float, nullable=True)
+    fatigue_label = Column(String, nullable=True)
+
+
+class TranscriptCache(Base):
+    """Caches transcription summaries to avoid re-processing."""
+    __tablename__ = "transcript_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, nullable=False, index=True)
+    from_sec = Column(Integer, default=0)
+    to_sec = Column(Integer, default=0)
+    summary_text = Column(Text, nullable=True)
+    concepts_json = Column(Text, nullable=True)  # JSON string
+    cached_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 # ─── Create all tables ─────────────────────────────────────────────────
 def init_db():
     """Create all tables if they don't exist."""
@@ -309,6 +338,59 @@ class DataStore:
         finally:
             db.close()
 
+    # ── Video Event Logging ──────────────────────────────────────────
+
+    def log_video_event(
+        self, session_id: str, event_type: str, video_id: str = "",
+        position_sec: int = 0, playback_rate: float = 1.0,
+        seek_delta_sec: int = 0, fatigue_score: float = 0.0,
+        fatigue_label: str = "",
+    ) -> dict:
+        """Log a video player event."""
+        db = self._get_session()
+        try:
+            record = VideoEventLog(
+                session_id=session_id,
+                event_type=event_type,
+                video_id=video_id,
+                position_sec=position_sec,
+                playback_rate=playback_rate,
+                seek_delta_sec=seek_delta_sec,
+                fatigue_score=fatigue_score,
+                fatigue_label=fatigue_label,
+            )
+            db.add(record)
+            db.commit()
+            return {"status": "logged", "event_type": event_type}
+        except Exception as e:
+            db.rollback()
+            return {"status": "error", "error": str(e)}
+        finally:
+            db.close()
+
+    def get_video_events(self, session_id: str) -> list:
+        """Get video events for a session."""
+        db = self._get_session()
+        try:
+            records = db.query(VideoEventLog).filter(
+                VideoEventLog.session_id == session_id
+            ).order_by(VideoEventLog.timestamp).all()
+            return [
+                {
+                    "event_type": r.event_type,
+                    "video_id": r.video_id,
+                    "position_sec": r.position_sec,
+                    "playback_rate": r.playback_rate,
+                    "seek_delta_sec": r.seek_delta_sec,
+                    "fatigue_score": r.fatigue_score,
+                    "fatigue_label": r.fatigue_label,
+                    "timestamp": str(r.timestamp),
+                }
+                for r in records
+            ]
+        finally:
+            db.close()
+
     # ── Export ──────────────────────────────────────────────────────
 
     def export_session(self, session_id: str) -> dict:
@@ -318,6 +400,7 @@ class DataStore:
             "profile": self.get_profile(session_id),
             "interactions": self.get_session_history(session_id),
             "quizzes": self.get_quiz_history(session_id),
+            "video_events": self.get_video_events(session_id),
         }
 
 

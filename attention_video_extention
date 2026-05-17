@@ -1,0 +1,211 @@
+
+ATTENTION-AWARE STUDY ASSISTANT
+Video Intelligence Expansion Module
+Addendum to Core Architecture Specification  ·  Phase V – VIII
+
+3 New Services	4 New Phases	YouTube Integration	Your Own Transcriber
+ 
+1. Expansion Overview
+This document extends the Attention-Aware Study Assistant with a full Video Intelligence layer. The existing system already tracks cognitive fatigue during text-based learning. This expansion introduces the same adaptive fatigue loop to video-based learning, adds YouTube-powered content discovery, and integrates your personal transcription-summary model as a graceful fallback when fatigue crosses a critical threshold.
+
+The design philosophy is the same as the core system: observe signals, reason about learner state, act with the least-friction adaptation. For video, the signals are different — interaction with the player is the telemetry — but the agentic loop is identical.
+
+1.1 How Video Telemetry Signals Fatigue
+Unlike keystroke patterns, video watching produces behavioural signals through player interactions:
+
+Player Event	Fatigue Signal Direction	Interpretation
+Speed increased (1x → 1.5x → 2x)	↓  LOWER fatigue	Learner is engaged and confident — content is easy to absorb at speed
+Skip forward (jumped ahead)	↓  LOWER fatigue	Learner already knows the material — low cognitive load
+Pause (short, < 10 sec)	→  NEUTRAL	Natural pause, note-taking, or distraction — ambiguous
+Pause (long, > 30 sec)	↑  HIGHER fatigue	Learner zoned out or overwhelmed — disengagement signal
+Speed decreased (2x → 1x)	↑  HIGHER fatigue	Content became difficult or confusing — cognitive load rising
+Seek backward / replay segment	↑↑  HIGH fatigue	Strong confusion signal — learner could not process the segment first time
+Repeated backward seeks on same spot	↑↑↑  CRITICAL	Triggers summary fallback — fatigue threshold breached
+
+ 
+2. New Microservices (SVC-08 to SVC-10)
+Three new services extend the existing 7-service architecture. They slot in cleanly: the Orchestrator Agent (SVC-05) is updated to route video interactions through these new services while all existing text-learning services remain untouched.
+
+SVC-08  ·  Video Fatigue Monitor Agent
+file: video_fatigue_monitor.py  ·  port: 8006
+
+Receives a stream of player events from the Streamlit video component (or a YouTube iframe tracker) and maintains a rolling fatigue score for the current video session. This is the video-specific equivalent of SVC-01 (Attention Monitor).
+
+What it does
+
+Inputs	Outputs
+•	event_type (play / pause / seek / speed_change)
+•	current_position_sec (int)
+•	playback_rate (float, e.g. 1.5)
+•	seek_delta_sec (negative = backward seek)
+•	session_id (string)	•	score: float 0–1
+•	label: ENGAGED / NEUTRAL / STRUGGLING / CRITICAL
+•	trigger_summary: bool
+•	current_position_sec: int
+•	recommended_action: string
+
+Tech Stack	Python · FastAPI · in-memory dict (session queues) · Pydantic
+Key Endpoints	POST /video-event  |  GET /video-history/{session_id}  |  POST /reset/{session_id}
+
+SVC-09  ·  YouTube Recommender Agent
+file: youtube_recommender.py  ·  port: 8007
+
+Takes the learner's current study topic (already stored in the Learner Profile) and fetches the 3 most relevant YouTube videos using the YouTube Data API v3. Applies a relevance + quality filter (view count, duration cap, channel credibility) before returning results. Passes video metadata to the Orchestrator so the Streamlit UI can embed the player directly.
+
+What it does
+
+Inputs	Outputs
+•	topic (string, from Learner Profile)
+•	difficulty_level (int 1–5)
+•	session_id (string)
+•	YOUTUBE_API_KEY (env var)	•	video_id (YouTube ID string)
+•	title, channel, duration_sec
+•	thumbnail_url, youtube_url
+•	relevance_score (float)
+
+Tech Stack	Python · FastAPI · google-api-python-client · Anthropic SDK (query optimisation)
+External APIs	YouTube Data API v3 (free, 10,000 units/day quota)  ·  Anthropic Claude API
+Key Endpoints	POST /recommend  |  GET /cached/{session_id}
+
+SVC-10  ·  Transcription Summary Agent
+file: transcription_summary.py  ·  port: 8008
+
+The fatigue fallback service. When Video Fatigue Monitor signals CRITICAL state, this service takes over. It loads your existing transcription model from the /transcriber folder, runs it on the video (or its cached transcript), and uses Claude to generate a structured, learner-friendly summary. The learner reads the summary instead of watching the rest of the video — dramatically reducing cognitive load.
+
+What it does
+
+Inputs	Outputs
+•	video_id (YouTube ID)
+•	from_position_sec (int)
+•	to_position_sec (int)
+•	topic (string)
+•	session_id (string)
+•	Your transcriber model at /transcriber/transcriber.py	•	summary_markdown (Markdown string)
+•	key_concepts (list of strings)
+•	estimated_read_sec (int)
+•	video_section_covered (e.g. '4:20 – 9:00')
+•	prerequisite_gaps (list of strings)
+
+Tech Stack	Python · FastAPI · Your transcriber module · Anthropic SDK (summarisation) · SQLite cache
+Your model path	/transcriber/transcriber.py  — drop your model here; the service imports it on startup
+Key Endpoints	POST /summarise  |  GET /cached/{video_id}  |  GET /health
+ 
+3. Orchestrator Updates — Video Routing Logic
+The existing Orchestrator (SVC-05, port 8000) gains a new /video-interact endpoint and updated routing logic. All existing /interact behaviour remains unchanged — this is purely additive.
+
+3.1 New Endpoint: POST /video-interact
+Called by Streamlit on every video player event. Runs the same 4-step ReAct loop but with video-specific agents:
+
+Step	Agent Called	What Happens
+OBSERVE	SVC-08 Video Fatigue Monitor	Post the player event (seek, speed, pause). Receive fatigue score + trigger_summary flag.
+REASON	SVC-02 Learner Profiler	Fetch learner profile. Combine video fatigue with existing text-session fatigue for a unified cognitive state.
+ACT	SVC-10 or adaptive player signal	If trigger_summary=true → call SVC-10, return summary. Otherwise return recommended_action (e.g. 'suggest_speed_down', 'none').
+REFLECT	SVC-02 + SVC-06	Update learner profile with video fatigue data. Log event to Data Store for session summary.
+
+3.2 Fatigue Threshold Decision Table
+Video Fatigue Label	Score Range	Orchestrator Action	Returned to UI
+ENGAGED	0.0 – 0.25	No intervention — let video play	{ action: 'none' }
+NEUTRAL	0.25 – 0.50	No intervention	{ action: 'none' }
+STRUGGLING	0.50 – 0.75	Show non-intrusive tip: 'Slow down or take a note?'	{ action: 'suggest_slowdown', message: '...' }
+CRITICAL	0.75 – 1.0	Trigger SVC-10 immediately. Pause video player. Show summary.	{ action: 'show_summary', summary: SummaryResult }
+ 
+4. Phase-by-Phase Implementation Plan (Video Expansion)
+Four new phases (V through VIII) build on top of the existing four. Each is independently demoable and ships a concrete capability.
+
+Phase V: Video Fatigue Telemetry (Terminal First)
+Day 4 — Morning (3 hrs)
+
+Phase Goal	Build SVC-08 as a terminal-testable Python module. Prove the scoring model works with mock player events before adding any UI.
+
+Step-by-step tasks:
+
+Phase VI: YouTube Recommender + Embedded Player
+Day 4 — Afternoon (4 hrs)
+
+Phase Goal	Build SVC-09 and wire it into the Streamlit frontend so learners can go from topic input to watching an embedded YouTube video in one click.
+
+Step-by-step tasks:
+
+Phase VII: Transcription Summary Fallback
+Day 5 — Morning (3–4 hrs)
+
+Phase Goal	Integrate your personal transcriber model, build SVC-10, and wire the full summary fallback so that a CRITICAL fatigue state automatically pauses the video and presents a readable summary.
+
+Step-by-step tasks:
+
+Phase VIII: Video Fatigue Dashboard + Cloud Deployment
+Day 5 — Afternoon (3 hrs)
+
+Phase Goal	Add a visual fatigue heatmap over the video timeline. Deploy the 3 new services alongside the existing 7 on Render.com. End-to-end cloud test.
+
+Step-by-step tasks:
+ 
+5. Full System Architecture Map (10 Services)
+The complete system after the video expansion. Original services are shown in blue; new video services are highlighted in the appropriate expansion colour.
+
+ID	Service Name	Port	Responsibility	Status
+SVC-01	Attention Monitor	8001	Fatigue from keystrokes (text)	Existing — unchanged
+SVC-02	Learner Profiler	8002	Session memory & mastery	Existing — now receives video fatigue too
+SVC-03	Content Adaptation	8003	Claude-powered content gen	Existing — unchanged
+SVC-04	Quiz Engine	8004	Question gen & evaluation	Existing — unchanged
+SVC-05	Orchestrator	8000	Central ReAct loop coordinator	Updated — new /video-interact endpoint
+SVC-06	Data Persistence	8005	SQLite / Supabase storage	Updated — new transcripts table
+SVC-07	Streamlit Frontend	8501	Learner UI	Updated — video player + fatigue timeline
+SVC-08	Video Fatigue Monitor	8006	Fatigue from player events	NEW — Phase V
+SVC-09	YouTube Recommender	8007	Topic → 3 YouTube videos	NEW — Phase VI
+SVC-10	Transcription Summary	8008	Your model → Claude summary	NEW — Phase VII
+ 
+6. Updated Project Directory Structure
+Changes from the core spec are highlighted with comments. Drop your transcriber model files into the /transcriber folder — no other structural changes needed.
+
+attention-aware-study-assistant/
+├── services/
+│   ├── orchestrator.py            # SVC-05 — UPDATED: /video-interact endpoint
+│   ├── attention_monitor.py       # SVC-01 — unchanged
+│   ├── learner_profiler.py        # SVC-02 — minor update: video_fatigue field
+│   ├── content_adapter.py         # SVC-03 — unchanged
+│   ├── quiz_engine.py             # SVC-04 — unchanged
+│   ├── data_store.py              # SVC-06 — UPDATED: transcripts table added
+│   ├── video_fatigue_monitor.py   # SVC-08 — NEW (Phase V)
+│   ├── youtube_recommender.py     # SVC-09 — NEW (Phase VI)
+│   └── transcription_summary.py   # SVC-10 — NEW (Phase VII)
+├── transcriber/                   # ← DROP YOUR MODEL HERE
+│   ├── __init__.py
+│   ├── transcriber.py             # Your model: transcribe(url, start, end) → str
+│   └── requirements.txt           # Your model's dependencies
+├── frontend/
+│   └── app.py                     # SVC-07 — UPDATED: video player + dashboard
+├── prompts/
+│   ├── concise.j2
+│   ├── detailed.j2
+│   ├── analogy.j2
+│   ├── quiz.j2
+│   └── video_summary.j2           # NEW — summarisation prompt template
+├── tests/
+│   ├── test_attention.py
+│   ├── test_quiz_engine.py
+│   ├── test_data_store.py
+│   ├── test_orchestrator.py
+│   ├── test_video_events.py       # NEW — Phase V
+│   ├── test_youtube_recommender.py# NEW — Phase VI
+│   └── test_transcription_summary.py # NEW — Phase VII
+├── .env.example
+├── requirements.txt
+└── README.md
+
+7. Environment Variables — Full List
+Variable	Used By	Where to Get It
+ANTHROPIC_API_KEY	SVC-03, SVC-04, SVC-09, SVC-10	console.anthropic.com
+YOUTUBE_API_KEY	SVC-09 YouTube Recommender	console.cloud.google.com → YouTube Data API v3
+DATABASE_URL	SVC-06 Data Store	SQLite path (dev) or Supabase connection string (prod)
+ORCHESTRATOR_URL	Streamlit frontend	http://localhost:8000 or Render.com URL
+VIDEO_FATIGUE_URL	Orchestrator → SVC-08	http://localhost:8006 or Render.com URL
+YOUTUBE_REC_URL	Orchestrator → SVC-09	http://localhost:8007 or Render.com URL
+SUMMARY_URL	Orchestrator → SVC-10	http://localhost:8008 or Render.com URL
+
+Key Design Principles of This Expansion
+
+Your transcriber is treated as a black box — SVC-10 only requires transcribe(url, start, end) → str. Swap it for a better model anytime with zero changes elsewhere.
+The summary fallback is non-disruptive — it only fires above a measured threshold, never on the first signal. Learners are not interrupted unnecessarily.
+All video data flows through the same Data Store and Learner Profiler — so a learner who watches a video and then returns to text gets a unified adaptive experience.
+

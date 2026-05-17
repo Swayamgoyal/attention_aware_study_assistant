@@ -43,6 +43,10 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+    /* Hide Deploy button and toolbar */
+    .stDeployButton, [data-testid="stToolbar"],
+    button[kind="header"], .stActionButton { display: none !important; }
+
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
     }
@@ -348,14 +352,6 @@ st.markdown("""
 
 # ─── Sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### ⚙️ Session Settings")
-    st.text(f"Session: {st.session_state.session_id}")
-
-    llm_info = get_orch().content_adapter.llm.get_info()
-    provider_emoji = {"gemini": "✨", "ollama": "🦙", "anthropic": "🤖"}.get(llm_info["provider"], "⚪")
-    st.info(f"{provider_emoji} **{llm_info['provider'].title()}** — {llm_info['model']}")
-
-    st.markdown("---")
 
     # Manual mode override
     st.markdown("### 🎛️ Mode Override")
@@ -461,164 +457,341 @@ with st.sidebar:
             st.rerun()
 
 
-# ─── Main Content Area ────────────────────────────────────────────────
-col_main, col_gauge = st.columns([3, 1])
+# ─── Mode Tabs ─────────────────────────────────────────────────────────
+if "app_mode" not in st.session_state:
+    st.session_state.app_mode = "learning"
 
-with col_gauge:
-    # Fatigue gauge
-    if st.session_state.last_result:
-        fs = st.session_state.last_result["fatigue_state"]
-        st.plotly_chart(
-            create_fatigue_gauge(fs["score"], fs["label"]),
-            use_container_width=True,
-        )
-        # Signal breakdown
-        signals = fs.get("signals", {})
-        for sig, val in signals.items():
-            if val is not None:
-                sig_label = sig.replace("_", " ").title()
-                st.progress(min(val, 1.0), text=f"{sig_label}: {val:.2f}")
-    else:
-        st.plotly_chart(
-            create_fatigue_gauge(0.0, "FRESH"),
-            use_container_width=True,
-        )
-        st.caption("💡 Start a conversation to see your fatigue level")
+mode_col1, mode_col2 = st.columns(2)
+with mode_col1:
+    if st.button("📚 Learning Mode", use_container_width=True,
+                 type="primary" if st.session_state.app_mode == "learning" else "secondary"):
+        st.session_state.app_mode = "learning"
+        st.rerun()
+with mode_col2:
+    if st.button("❓ Quiz Mode", use_container_width=True,
+                 type="primary" if st.session_state.app_mode == "quiz" else "secondary"):
+        st.session_state.app_mode = "quiz"
+        st.rerun()
 
-with col_main:
-    # Break suggestion
-    if st.session_state.show_break:
-        st.markdown("""
-        <div class="break-alert">
-            ☕ <strong>Your cognitive load is high!</strong>
-            Consider taking a 5-minute break. Stretch, hydrate, or look away from the screen.
-            Short breaks boost retention by up to 20%.
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("✅ I'm back! Resume studying"):
-            st.session_state.show_break = False
-            st.session_state.interaction_count = max(0, st.session_state.interaction_count - 2)
+st.markdown("")
+
+# ═══════════════════════════════════════════════════════════════════════
+# LEARNING MODE — Video + Prompt (fatigue from video interactions)
+# ═══════════════════════════════════════════════════════════════════════
+if st.session_state.app_mode == "learning":
+
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #e74c3c 0%, #8e44ad 100%);
+         padding: 1rem 1.5rem; border-radius: 14px; margin-bottom: 1rem; color: white;
+         box-shadow: 0 6px 24px rgba(142, 68, 173, 0.3);">
+        <h2 style="color:white; margin:0; font-size:1.4rem;">📺 Video Learning Mode</h2>
+        <p style="color:rgba(255,255,255,0.85); margin:0.3rem 0 0 0; font-weight:300; font-size:0.9rem;">
+            Search YouTube for videos — fatigue is tracked through your control interactions
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Video session state
+    if "video_recommendations" not in st.session_state:
+        st.session_state.video_recommendations = []
+    if "active_video" not in st.session_state:
+        st.session_state.active_video = None
+    if "video_fatigue" not in st.session_state:
+        st.session_state.video_fatigue = {"score": 0.0, "label": "ENGAGED"}
+    if "video_summary" not in st.session_state:
+        st.session_state.video_summary = None
+    if "video_position" not in st.session_state:
+        st.session_state.video_position = 0
+
+    # YouTube search
+    vid_col1, vid_col2 = st.columns([3, 1])
+    with vid_col1:
+        video_topic = st.text_input(
+            "Search for educational videos:",
+            placeholder="e.g., recursion in python, calculus derivatives...",
+            key="video_topic_input",
+        )
+    with vid_col2:
+        search_video = st.button("Find Videos", use_container_width=True, type="primary")
+
+    if search_video and video_topic:
+        with st.spinner("Searching YouTube..."):
+            try:
+                import httpx
+                r = httpx.post(
+                    f"{ORCHESTRATOR_URL}/youtube/recommend",
+                    json={
+                        "topic": video_topic,
+                        "difficulty_level": 2,
+                        "session_id": st.session_state.session_id,
+                        "max_results": 6,
+                    },
+                    timeout=30,
+                )
+                st.session_state.video_recommendations = r.json() if r.status_code == 200 else []
+            except Exception as e:
+                st.error(f"Search failed: {e}")
+                st.session_state.video_recommendations = []
+
+    # Display recommendations
+    if st.session_state.video_recommendations:
+        st.markdown("#### Recommended Videos")
+        recs = st.session_state.video_recommendations[:6]
+        for row_start in range(0, len(recs), 3):
+            row_vids = recs[row_start:row_start + 3]
+            vid_cols = st.columns(3)
+            for i, vid in enumerate(row_vids):
+                with vid_cols[i]:
+                    duration_min = vid.get("duration_sec", 0) // 60
+                    vid_id = vid.get("video_id", "")
+                    thumb_url = vid.get("thumbnail_url", "") or f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
+                    st.markdown(f"""
+                    <div style="background:#1a1a2e; border-radius:12px; overflow:hidden;
+                         box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom:0.5rem;">
+                        <img src="{thumb_url}" style="width:100%; height:140px; object-fit:cover;"
+                             onerror="this.src='https://img.youtube.com/vi/{vid_id}/hqdefault.jpg'"/>
+                        <div style="padding:0.7rem; color:white;">
+                            <p style="font-size:0.82rem; font-weight:600; margin:0 0 0.3rem 0;
+                               line-height:1.3; min-height:2.4rem; overflow:hidden;">
+                                {vid.get('title', 'Video')[:65]}
+                            </p>
+                            <p style="font-size:0.7rem; color:rgba(255,255,255,0.6); margin:0;">
+                                {vid.get('channel', '')[:30]} &bull; {duration_min}min
+                            </p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("Watch", key=f"watch_{vid_id}_{row_start+i}", use_container_width=True):
+                        st.session_state.active_video = vid
+                        st.session_state.video_fatigue = {"score": 0.0, "label": "ENGAGED"}
+                        st.session_state.video_summary = None
+                        st.session_state.video_position = 0
+                        st.rerun()
+
+    # Active Video Player
+    if st.session_state.active_video:
+        vid = st.session_state.active_video
+        vid_id = vid.get("video_id", "")
+        st.markdown(f"**▶ Now Playing:** {vid.get('title', 'Video')}")
+        player_url = f"{ORCHESTRATOR_URL}/player?v={vid_id}&sid={st.session_state.session_id}&api={ORCHESTRATOR_URL}"
+        components.iframe(player_url, height=850, scrolling=True)
+
+        if st.button("✖ Close Video", use_container_width=True):
+            st.session_state.active_video = None
+            st.session_state.video_summary = None
             st.rerun()
 
-    # Input area
-    st.markdown("### 💬 Ask a Question or Enter a Topic")
+        if st.session_state.video_summary:
+            summary_data = st.session_state.video_summary
+            st.markdown(summary_data.get("summary_markdown", "*No summary available*"))
+            if st.button("Resume Video", type="primary"):
+                st.session_state.video_summary = None
+                st.rerun()
 
-    user_input = st.text_area(
-        "What would you like to learn?",
-        placeholder="e.g., Explain how neural networks learn through backpropagation...",
-        height=100,
-        key="user_input",
+    # ─── Learning Prompt (below video) ────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 💬 Ask About This Topic")
+    learn_input = st.text_area(
+        "Ask a question or enter a topic:",
+        placeholder="e.g., Explain the Pythagorean theorem step by step...",
+        height=80,
+        key="learn_input",
         label_visibility="collapsed",
     )
+    learn_submit = st.button("🚀 Get Explanation", use_container_width=True, type="primary",
+                             key="learn_submit_btn")
 
-    col_submit, col_quiz = st.columns(2)
-    with col_submit:
-        submit = st.button("🚀 Get Explanation", use_container_width=True, type="primary")
-    with col_quiz:
-        quiz_btn = st.button("❓ Quiz Me", use_container_width=True)
-
-    # Process input
-    if (submit or quiz_btn) and user_input:
-        # Calculate response delay from last interaction
+    if learn_submit and learn_input:
         response_delay = int((time.time() - st.session_state.last_interaction_time) * 1000)
-
-        # Use simulated keypress data (real JS telemetry through the component above)
         kp, _ = simulate_keypress_data(st.session_state.interaction_count)
-
-        forced_mode = "quiz" if quiz_btn else manual_mode
-
         with st.spinner("🧠 Thinking..."):
             result = get_orch().interact(
-                user_message=user_input,
+                user_message=learn_input,
                 session_id=st.session_state.session_id,
                 keypress_intervals=kp,
                 response_delay_ms=response_delay,
-                manual_mode=forced_mode,
+                manual_mode=manual_mode,
             )
-
         st.session_state.last_result = result
         st.session_state.interaction_count += 1
         st.session_state.last_interaction_time = time.time()
         st.session_state.history.append({
-            "topic": user_input[:50],
+            "topic": learn_input[:50],
             "mode": result["mode_used"],
             "fatigue": result["fatigue_state"]["label"],
         })
-
-        # Check if exhausted → show break suggestion
-        if result["fatigue_state"]["label"] == "EXHAUSTED":
-            st.session_state.show_break = True
-
-        if result.get("type") == "quiz" and result.get("quiz_data"):
-            st.session_state.quiz_pending = result["quiz_data"]
-
         st.rerun()
 
-    # Display last result
-    if st.session_state.last_result:
+    # Display learning result
+    if st.session_state.last_result and st.session_state.app_mode == "learning":
         result = st.session_state.last_result
-        mode = result["mode_used"]
-        mode_colors = {
-            "detailed": "mode-detailed", "concise": "mode-concise",
-            "analogy": "mode-analogy", "quiz": "mode-quiz",
-        }
-        mode_emoji = {"detailed": "📖", "concise": "📋", "analogy": "🎭", "quiz": "❓"}.get(mode, "📄")
+        if result.get("type") != "quiz":
+            mode = result["mode_used"]
+            mode_emoji = {"detailed": "📖", "concise": "📋", "analogy": "🎭", "quiz": "❓"}.get(mode, "📄")
+            mode_colors = {"detailed": "mode-detailed", "concise": "mode-concise",
+                           "analogy": "mode-analogy", "quiz": "mode-quiz"}
+            st.markdown(f"""
+            <span class="mode-badge {mode_colors.get(mode, '')}">
+                {mode_emoji} {mode.upper()} MODE
+            </span>
+            """, unsafe_allow_html=True)
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            st.markdown(result["content"])
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <span class="mode-badge {mode_colors.get(mode, '')}">
-            {mode_emoji} {mode.upper()} MODE
-        </span>
-        <span style="color:#888; font-size:0.85rem;">
-            Generated in {result.get('response_time_seconds', 0)}s
-        </span>
-        """, unsafe_allow_html=True)
 
-        st.markdown('<div class="content-card">', unsafe_allow_html=True)
-        st.markdown(result["content"])
-        st.markdown('</div>', unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════
+# QUIZ MODE — Original prompt + keypress telemetry (untouched logic)
+# ═══════════════════════════════════════════════════════════════════════
+elif st.session_state.app_mode == "quiz":
 
-    # Quiz answer input
-    if st.session_state.quiz_pending:
-        qd = st.session_state.quiz_pending
-        st.markdown("---")
-        st.markdown("### ✏️ Your Answer")
-        answer = st.text_input("Type your answer:", key="quiz_answer", placeholder="Enter your response...")
-        if st.button("📝 Submit Answer", type="primary"):
-            if answer:
-                with st.spinner("🔍 Evaluating your answer..."):
-                    eval_result = get_orch().submit_quiz_answer(
-                        st.session_state.session_id,
-                        qd["question"], qd["correct_answer"],
-                        answer, "",
-                    )
-                ev = eval_result.get("evaluation", {})
-                score = ev.get("score", 0)
+    col_main, col_gauge = st.columns([3, 1])
 
-                if ev.get("is_correct"):
-                    st.success(f"✅ **Correct!** Score: {score:.0%}")
-                    st.balloons()
-                elif score >= 0.5:
-                    st.warning(f"🤔 **Partially correct.** Score: {score:.0%}")
-                else:
-                    st.error(f"❌ **Not quite.** Score: {score:.0%}")
+    with col_gauge:
+        if st.session_state.last_result:
+            fs = st.session_state.last_result["fatigue_state"]
+            st.plotly_chart(
+                create_fatigue_gauge(fs["score"], fs["label"]),
+                use_container_width=True,
+            )
+            signals = fs.get("signals", {})
+            for sig, val in signals.items():
+                if val is not None:
+                    sig_label = sig.replace("_", " ").title()
+                    st.progress(min(val, 1.0), text=f"{sig_label}: {val:.2f}")
+        else:
+            st.plotly_chart(
+                create_fatigue_gauge(0.0, "FRESH"),
+                use_container_width=True,
+            )
+            st.caption("💡 Start a conversation to see your fatigue level")
 
-                st.info(f"**Feedback:** {ev.get('feedback', '')}")
+    with col_main:
+        if st.session_state.show_break:
+            st.markdown("""
+            <div class="break-alert">
+                ☕ <strong>Your cognitive load is high!</strong>
+                Consider taking a 5-minute break.
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("✅ I'm back! Resume studying"):
+                st.session_state.show_break = False
+                st.session_state.interaction_count = max(0, st.session_state.interaction_count - 2)
+                st.rerun()
 
-                with st.expander("📋 View correct answer"):
-                    st.markdown(f"**{qd['correct_answer']}**")
-                    if qd.get("explanation"):
-                        st.caption(qd["explanation"])
+        st.markdown("### 💬 Ask a Question or Enter a Topic")
+        user_input = st.text_area(
+            "What would you like to learn?",
+            placeholder="e.g., Explain how neural networks learn through backpropagation...",
+            height=100,
+            key="quiz_user_input",
+            label_visibility="collapsed",
+        )
 
-                st.session_state.quiz_pending = None
+        quiz_btn = st.button("❓ Quiz Me", use_container_width=True, type="primary",
+                             key="quiz_me_btn")
+
+        # Process — uses existing keypress variance + response delay norm
+        if quiz_btn and user_input:
+            response_delay = int((time.time() - st.session_state.last_interaction_time) * 1000)
+            kp, _ = simulate_keypress_data(st.session_state.interaction_count)
+            forced_mode = "quiz"
+
+            with st.spinner("🧠 Thinking..."):
+                result = get_orch().interact(
+                    user_message=user_input,
+                    session_id=st.session_state.session_id,
+                    keypress_intervals=kp,
+                    response_delay_ms=response_delay,
+                    manual_mode=forced_mode,
+                )
+
+            st.session_state.last_result = result
+            st.session_state.interaction_count += 1
+            st.session_state.last_interaction_time = time.time()
+            st.session_state.history.append({
+                "topic": user_input[:50],
+                "mode": result["mode_used"],
+                "fatigue": result["fatigue_state"]["label"],
+            })
+
+            if result["fatigue_state"]["label"] == "EXHAUSTED":
+                st.session_state.show_break = True
+            if result.get("type") == "quiz" and result.get("quiz_data"):
+                st.session_state.quiz_pending = result["quiz_data"]
+            st.rerun()
+
+        # Display result
+        if st.session_state.last_result:
+            result = st.session_state.last_result
+            mode = result["mode_used"]
+            mode_colors = {"detailed": "mode-detailed", "concise": "mode-concise",
+                           "analogy": "mode-analogy", "quiz": "mode-quiz"}
+            mode_emoji = {"detailed": "📖", "concise": "📋", "analogy": "🎭", "quiz": "❓"}.get(mode, "📄")
+
+            st.markdown(f"""
+            <span class="mode-badge {mode_colors.get(mode, '')}">
+                {mode_emoji} {mode.upper()} MODE
+            </span>
+            <span style="color:#888; font-size:0.85rem;">
+                Generated in {result.get('response_time_seconds', 0)}s
+            </span>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="content-card">', unsafe_allow_html=True)
+            st.markdown(result["content"])
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # Quiz answer
+        if st.session_state.quiz_pending:
+            qd = st.session_state.quiz_pending
+            st.markdown("---")
+            st.markdown("### ✏️ Your Answer")
+            answer = st.text_input("Type your answer:", key="quiz_answer", placeholder="Enter your response...")
+            if st.button("📝 Submit Answer", type="primary"):
+                if answer:
+                    with st.spinner("🔍 Evaluating..."):
+                        eval_result = get_orch().submit_quiz_answer(
+                            st.session_state.session_id,
+                            qd["question"], qd["correct_answer"],
+                            answer, "",
+                        )
+                    ev = eval_result.get("evaluation", {})
+                    score = ev.get("score", 0)
+                    if ev.get("is_correct"):
+                        st.success(f"**Correct!** Score: {score:.0%}")
+                        st.balloons()
+                    elif score >= 0.5:
+                        st.warning(f"**Partially correct.** Score: {score:.0%}")
+                    else:
+                        st.error(f"**Not quite.** Score: {score:.0%}")
+                    st.info(f"**Feedback:** {ev.get('feedback', '')}")
+                    with st.expander("View correct answer & explanation"):
+                        st.markdown(f"**Correct Answer:** {qd['correct_answer']}")
+                        if qd.get("explanation"):
+                            st.caption(qd["explanation"])
+                        st.markdown("---")
+                        st.markdown("**📖 Detailed Explanation:**")
+                        with st.spinner("Generating explanation..."):
+                            explain_result = get_orch().interact(
+                                user_message=f"Explain this concept in detail: {qd['question']}. The correct answer is: {qd['correct_answer']}",
+                                session_id=st.session_state.session_id,
+                                keypress_intervals=[200, 200, 200],
+                                response_delay_ms=2000,
+                                manual_mode="detailed",
+                            )
+                        st.markdown(explain_result.get("content", "*Explanation unavailable*"))
+                    st.session_state.quiz_pending = None
 
 
 # ─── Footer ────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     '<div style="text-align:center; color:#aaa; font-size:0.8rem; padding: 0.5rem 0;">'
-    '🧠 Built with Streamlit · FastAPI · Gemini/Ollama · SQLAlchemy '
+    'Built with Streamlit + FastAPI + Ollama/Gemini + SQLAlchemy '
     '| <a href="/docs" style="color:#667eea;">API Docs</a> '
-    '| GenAI System Building Challenge'
+    '| 10 Microservices | GenAI System Building Challenge'
     '</div>',
     unsafe_allow_html=True,
 )
+

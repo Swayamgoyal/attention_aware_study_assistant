@@ -243,3 +243,127 @@ def create_data_store_app():
         return {"status": "ok", "service": "data_store"}
 
     return app
+
+
+# ─── SVC-08 · Video Fatigue Monitor ───────────────────────────────────
+
+def create_video_fatigue_app():
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    from services.video_fatigue_monitor import VideoFatigueMonitor
+    app = FastAPI(title="SVC-08 - Video Fatigue Monitor", version="1.0")
+    monitor = VideoFatigueMonitor()
+
+    class VideoEventRequest(BaseModel):
+        session_id: str
+        event_type: str  # play, pause, seek, speed_change
+        position_sec: int = 0
+        playback_rate: float = 1.0
+        seek_delta_sec: int = 0
+
+    @app.post("/video-event")
+    def video_event(req: VideoEventRequest):
+        result = monitor.process_event(
+            session_id=req.session_id,
+            event_type=req.event_type,
+            position_sec=req.position_sec,
+            playback_rate=req.playback_rate,
+            seek_delta_sec=req.seek_delta_sec,
+        )
+        return result.to_dict()
+
+    @app.get("/video-history/{session_id}")
+    def video_history(session_id: str):
+        return monitor.get_history(session_id)
+
+    @app.get("/fatigue-timeline/{session_id}")
+    def fatigue_timeline(session_id: str):
+        return monitor.get_fatigue_timeline(session_id)
+
+    @app.post("/reset/{session_id}")
+    def reset(session_id: str):
+        return monitor.reset(session_id)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "service": "video_fatigue_monitor"}
+
+    return app
+
+
+# ─── SVC-09 · YouTube Recommender ─────────────────────────────────────
+
+def create_youtube_app():
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    from services.youtube_recommender import YouTubeRecommender
+    app = FastAPI(title="SVC-09 - YouTube Recommender", version="1.0")
+    recommender = YouTubeRecommender()
+
+    class RecommendRequest(BaseModel):
+        topic: str
+        difficulty_level: int = 2
+        session_id: str = ""
+        max_results: int = 3
+
+    @app.post("/recommend")
+    def recommend(req: RecommendRequest):
+        return recommender.recommend(
+            topic=req.topic,
+            difficulty_level=req.difficulty_level,
+            session_id=req.session_id,
+            max_results=req.max_results,
+        )
+
+    @app.get("/cached/{session_id}")
+    def cached(session_id: str):
+        return recommender.get_cached(session_id)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "service": "youtube_recommender", **recommender.get_info()}
+
+    return app
+
+
+# ─── SVC-10 · Transcription Summary ───────────────────────────────────
+
+def create_summary_app():
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    from services.transcription_summary import TranscriptionSummaryAgent
+    app = FastAPI(title="SVC-10 - Transcription Summary", version="1.0")
+    agent = TranscriptionSummaryAgent()
+
+    class SummariseRequest(BaseModel):
+        video_id: str
+        from_position_sec: int = 0
+        to_position_sec: int = 0
+        topic: str = ""
+        session_id: str = ""
+        mastery_level: int = 2
+        fatigue_label: str = "CRITICAL"
+
+    @app.post("/summarise")
+    def summarise(req: SummariseRequest):
+        return agent.summarise(
+            video_id=req.video_id,
+            from_position_sec=req.from_position_sec,
+            to_position_sec=req.to_position_sec,
+            topic=req.topic,
+            session_id=req.session_id,
+            mastery_level=req.mastery_level,
+            fatigue_label=req.fatigue_label,
+        )
+
+    @app.get("/cached/{video_id}")
+    def cached(video_id: str):
+        result = agent.get_cached(video_id)
+        return result if result else {"status": "not_cached"}
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "service": "transcription_summary", "llm": agent.llm.get_info()}
+
+    return app
+

@@ -1,0 +1,95 @@
+% LaTeX version of docs/project_report.md
+% Compile with: pdflatex project_report.tex (twice for ToC)
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=18mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{fancyvrb}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{gray!70!black},
+  stringstyle=\color{teal!60!black}
+}
+
+% MiKTeX listings doesn't always ship with all language definitions enabled.
+% Define lightweight versions for the languages used in this report.
+\lstdefinelanguage{JavaScript}{
+  morekeywords={const,let,var,function,return,if,else,for,while,break,continue,new,this,true,false,null,undefined,try,catch,finally,throw,await,async},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  morestring=[b]',
+}
+
+\lstdefinelanguage{bash}{
+  morekeywords={cd,ls,cat,echo,export,source,python,pip,pytest,uvicorn},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]',
+}
+
+\lstdefinelanguage{SQL}{
+  morekeywords={SELECT,FROM,WHERE,INSERT,INTO,VALUES,UPDATE,SET,DELETE,CREATE,TABLE,PRIMARY,KEY,FOREIGN,REFERENCES,JOIN,LEFT,RIGHT,INNER,OUTER,ON,AND,OR,NOT,NULL},
+  sensitive=false,
+  morecomment=[l]{--},
+  morestring=[b]",
+  morestring=[b]',
+}
+
+\title{Attention-Aware Study Assistant\\Technical Project Report}
+\author{GenAI System Building Challenge \textbar{} Lab Hackathon}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{quote}
+\textbf{GenAI System Building Challenge | Lab Hackathon}\\
+A cloud-native, microservices-style, GenAI-powered NLP system that adapts educational content delivery based on real-time cognitive fatigue signals.
+\end{quote}
+
+\tableofcontents
+\newpage
+
+
+% --- Section-wise inputs (generated) ---
+\input{project_report_sections/01_executive_summary}
+\input{project_report_sections/02_system_architecture}
+\input{project_report_sections/03_microservices_breakdown}
+\input{project_report_sections/04_genai_nlp_pipelines}
+\input{project_report_sections/05_fatigue_detection_engine}
+\input{project_report_sections/06_video_intelligence_pipeline}
+\input{project_report_sections/07_frontend_user_experience}
+\input{project_report_sections/08_data_persistence_layer}
+\input{project_report_sections/09_prompt_engineering}
+\input{project_report_sections/10_testing_strategy}
+\input{project_report_sections/11_cloud_native_design}
+\input{project_report_sections/12_technology_stack}
+\input{project_report_sections/13_genai_reflection}
+\input{project_report_sections/A_appendix_file_structure}
+
+\end{document}
