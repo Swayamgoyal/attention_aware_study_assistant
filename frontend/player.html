@@ -7,69 +7,57 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: transparent; padding: 8px; }
+        body { background: #000000; padding: 0; color: #ff0000; }
 
-        .player-layout { display: flex; gap: 16px; width: 100%; }
-        .video-side { flex: 3; }
+        .player-layout { display: flex; gap: 0; width: 100%; }
+        .video-side { flex: 3; border: 2px solid #ff0000; }
         .gauge-side {
             flex: 1; min-width: 160px;
-            display: flex; flex-direction: column; align-items: center; gap: 8px;
-            padding-top: 8px;
+            display: flex; flex-direction: column; align-items: center; gap: 0;
+            padding-top: 0; border: 2px solid #ff0000; border-left: none;
         }
 
-        /* Semicircle Gauge */
         .gauge-wrap { position: relative; width: 160px; height: 95px; overflow: hidden; }
         .gauge-svg { width: 160px; height: 95px; }
-        .gauge-bg-arc { fill: none; stroke: #e8e8e8; stroke-width: 14; stroke-linecap: round; }
+        .gauge-bg-arc { fill: none; stroke: #ff0000; stroke-width: 14; }
         .gauge-fill-arc {
-            fill: none; stroke-width: 14; stroke-linecap: round;
-            transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+            fill: none; stroke-width: 14; stroke: #000000;
         }
-        .gauge-pct { font-size: 32px; font-weight: 700; }
-        .gauge-lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
-        .gauge-title { font-size: 13px; font-weight: 700; color: #444; text-align: center; }
+        .gauge-pct { font-size: 32px; font-weight: 700; fill: #ff0000 !important; }
+        .gauge-lbl { font-size: 12px; font-weight: 600; fill: #ff0000 !important; }
+        .gauge-title { font-size: 13px; font-weight: 700; color: #ff0000; text-align: center; }
 
-        /* Buttons */
-        .ctrl-row { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
+        .ctrl-row { display: flex; gap: 0; margin-top: 0; flex-wrap: wrap; border-top: 2px solid #ff0000; }
         .ctrl-btn {
-            flex: 1; min-width: 65px; padding: 9px 3px; color: white; border: none;
-            border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600;
-            transition: transform 0.12s, box-shadow 0.12s; text-align: center;
+            flex: 1; min-width: 65px; padding: 8px; color: #ff0000; border: 1px solid #ff0000;
+            background: #000000 !important;
+            cursor: pointer; font-size: 11px; font-weight: 600;
+            text-align: center; border-radius: 0;
         }
-        .ctrl-btn:hover {
-            transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-            filter: brightness(1.1);
-        }
-        .ctrl-btn:active { transform: translateY(0); }
-        .ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .ctrl-btn:hover { background: #ff0000 !important; color: #000000; }
 
         .status-bar {
-            margin-top: 6px; padding: 5px 10px; font-size: 0.75rem; color: #555;
-            background: rgba(0,0,0,0.04); border-radius: 6px; min-height: 24px;
+            padding: 5px; font-size: 0.75rem; color: #ff0000;
+            background: #000000; border-top: 2px solid #ff0000;
         }
         .warn-box {
-            display: none; padding: 6px 10px; border-radius: 8px; text-align: center;
-            font-size: 0.78rem; font-weight: 600; margin-top: 4px; width: 100%;
+            display: none; padding: 5px; text-align: center;
+            font-size: 0.78rem; font-weight: 600; width: 100%; border-top: 2px solid #ff0000;
+            background: #000000 !important; color: #ff0000 !important;
         }
         #player-wrap {
-            border-radius: 12px; overflow: hidden;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+            overflow: hidden; background: #000000;
         }
-        /* Summary overlay - PROMINENT */
         .summary-overlay {
-            display: none; margin-top: 10px; padding: 18px 20px;
-            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
-            border-radius: 14px; color: #e0e0e0; font-size: 0.9rem;
-            line-height: 1.7; max-height: 350px; overflow-y: auto;
-            box-shadow: 0 6px 30px rgba(15,52,96,0.5);
-            border: 1px solid rgba(52,152,219,0.3);
+            display: none; padding: 10px;
+            background: #000000; color: #ff0000; font-size: 0.9rem;
+            line-height: 1.5; border-top: 2px solid #ff0000;
         }
         .summary-overlay h3 {
-            margin: 0 0 10px 0; font-size: 1.15rem; color: #3498db;
-            border-bottom: 1px solid rgba(52,152,219,0.3); padding-bottom: 8px;
+            margin: 0 0 5px 0; font-size: 1.15rem; color: #ff0000;
+            border-bottom: 1px solid #ff0000; padding-bottom: 5px;
         }
-        .summary-overlay strong { color: #f39c12; }
-        .summary-overlay em { color: #1abc9c; }
+        .summary-overlay strong, .summary-overlay em { color: #ff0000; }
     </style>
 </head>
 <body>
@@ -81,24 +69,24 @@
 
             <div class="ctrl-row">
                 <button onclick="doPlay()" class="ctrl-btn" id="btn-play"
-                    style="background:linear-gradient(135deg,#27ae60,#2ecc71);">▶ Play</button>
+                    > Play</button>
                 <button onclick="doPause()" class="ctrl-btn" id="btn-pause"
-                    style="background:linear-gradient(135deg,#e67e22,#f39c12);">⏸ Pause</button>
+                    > Pause</button>
                 <button onclick="doRewind()" class="ctrl-btn" id="btn-rw"
-                    style="background:linear-gradient(135deg,#3498db,#2980b9);">⏪ −10s</button>
+                    > −10s</button>
                 <button onclick="doSkip()" class="ctrl-btn" id="btn-ff"
-                    style="background:linear-gradient(135deg,#9b59b6,#8e44ad);">⏩ +30s</button>
+                    > +30s</button>
                 <button onclick="doSlow()" class="ctrl-btn" id="btn-slow"
-                    style="background:linear-gradient(135deg,#1abc9c,#16a085);">🐢 0.75×</button>
+                    > 0.75×</button>
                 <button onclick="doNormal()" class="ctrl-btn" id="btn-norm"
-                    style="background:linear-gradient(135deg,#34495e,#2c3e50);">1× Normal</button>
+                    >1× Normal</button>
                 <button onclick="doFast()" class="ctrl-btn" id="btn-fast"
-                    style="background:linear-gradient(135deg,#e74c3c,#c0392b);">🐇 2×</button>
+                    > 2×</button>
             </div>
 
-            <div class="status-bar" id="status">⏳ Loading YouTube player...</div>
+            <div class="status-bar" id="status"> Loading YouTube player...</div>
             <div class="summary-overlay" id="summaryBox">
-                <h3>📝 Video Summary</h3>
+                <h3> Video Summary</h3>
                 <div id="summaryContent"></div>
             </div>
         </div>
@@ -111,7 +99,7 @@
                     <path d="M 15 80 A 65 65 0 0 1 145 80" class="gauge-bg-arc"/>
                     <!-- Semicircle fill arc -->
                     <path d="M 15 80 A 65 65 0 0 1 145 80" class="gauge-fill-arc" id="gaugeFill"
-                        stroke="#27ae60"
+                        stroke="#000000"
                         stroke-dasharray="204"
                         stroke-dashoffset="204"/>
                     <!-- Percentage text -->
@@ -188,7 +176,7 @@
         }
 
         function onPlayerReady(event) {
-            statusEl.textContent = '✅ Player ready — use buttons to control video';
+            statusEl.textContent = ' Player ready — use buttons to control video';
         }
 
         function onPlayerStateChange(event) {
@@ -205,25 +193,22 @@
             var offset = arcLength - (score * arcLength);
             gaugeEl.style.strokeDashoffset = offset;
 
-            var colors = {
-                'ENGAGED': '#27ae60', 'NEUTRAL': '#f39c12',
-                'STRUGGLING': '#e67e22', 'FATIGUED': '#e74c3c'
-            };
-            gaugeEl.style.stroke = colors[label] || '#95a5a6';
+            var colors = {'ENGAGED': '#000000', 'NEUTRAL': '#000000', 'STRUGGLING': '#000000', 'FATIGUED': '#000000'};
+            gaugeEl.style.stroke = '#000000';
             valEl.textContent = pct + '%';
             lblEl.textContent = label;
-            valEl.setAttribute('fill', colors[label] || '#333');
+            
 
             if (label === 'STRUGGLING' || label === 'CRITICAL') {
                 warnEl.style.display = 'block';
                 if (label === 'CRITICAL') {
-                    warnEl.style.background = 'linear-gradient(135deg, #fab1a0, #e74c3c)';
-                    warnEl.style.color = 'white';
-                    warnEl.textContent = '🛑 High fatigue!';
+                    warnEl.style.background = '#ff0000';
+                    warnEl.style.color = '#000000';
+                    warnEl.textContent = ' High fatigue!';
                 } else {
-                    warnEl.style.background = 'linear-gradient(135deg, #ffeaa7, #fdcb6e)';
-                    warnEl.style.color = '#856404';
-                    warnEl.textContent = '⚠ Slowing down?';
+                    warnEl.style.background = '#ff0000';
+                    warnEl.style.color = '#000000';
+                    warnEl.textContent = ' Slowing down?';
                 }
             } else {
                 warnEl.style.display = 'none';
@@ -273,7 +258,7 @@
                 updateGauge(localFatigue, label);
 
                 var pct = Math.round(score * 100);
-                statusEl.textContent = '📊 Fatigue: ' + pct + '% (' + label + ') | Pos: ' + pos + 's';
+                statusEl.textContent = ' Fatigue: ' + pct + '% (' + label + ') | Pos: ' + pos + 's';
 
                 // Show summary ONCE — then keep it static
                 if (!summaryShown && data.summary && data.summary.summary_markdown) {
@@ -283,11 +268,11 @@
                         .replace(/\n/g, '<br>')
                         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                         .replace(/\*(.+?)\*/g, '<em>$1</em>');
-                    statusEl.textContent = '📝 Summary generated! Fatigue: ' + pct + '%';
+                    statusEl.textContent = ' Summary generated! Fatigue: ' + pct + '%';
                 }
             })
             .catch(e => {
-                statusEl.textContent = '⚠ Backend error: ' + e.message;
+                statusEl.textContent = ' Backend error: ' + e.message;
             });
         }
 
@@ -296,7 +281,7 @@
             if (!player) return;
             player.playVideo();
             instantUpdate('play');
-            statusEl.textContent = '▶ Playing...';
+            statusEl.textContent = ' Playing...';
         }
 
         function doPause() {
@@ -304,7 +289,7 @@
             player.pauseVideo();
             instantUpdate('pause');
             sendFatigueEvent('pause', 0, currentRate);
-            statusEl.textContent = '⏸ Paused';
+            statusEl.textContent = ' Paused';
         }
 
         function doRewind() {
@@ -314,7 +299,7 @@
             player.seekTo(newT, true);
             instantUpdate('seek_back');
             sendFatigueEvent('seek', -10, currentRate);
-            statusEl.textContent = '⏪ Rewound to ' + Math.floor(newT) + 's';
+            statusEl.textContent = ' Rewound to ' + Math.floor(newT) + 's';
         }
 
         function doSkip() {
@@ -324,7 +309,7 @@
             player.seekTo(newT, true);
             instantUpdate('seek_fwd');
             sendFatigueEvent('seek', 30, currentRate);
-            statusEl.textContent = '⏩ Skipped to ' + Math.floor(newT) + 's';
+            statusEl.textContent = ' Skipped to ' + Math.floor(newT) + 's';
         }
 
         function doSlow() {
@@ -333,7 +318,7 @@
             player.setPlaybackRate(0.75);
             instantUpdate('speed_slow');
             sendFatigueEvent('speed_change', 0, 0.75);
-            statusEl.textContent = '🐢 Speed: 0.75×';
+            statusEl.textContent = ' Speed: 0.75×';
         }
 
         function doNormal() {
@@ -342,7 +327,7 @@
             player.setPlaybackRate(1.0);
             instantUpdate('speed_normal');
             sendFatigueEvent('speed_change', 0, 1.0);
-            statusEl.textContent = '▶ Speed: 1×';
+            statusEl.textContent = ' Speed: 1×';
         }
 
         function doFast() {
@@ -351,7 +336,7 @@
             player.setPlaybackRate(2.0);
             instantUpdate('speed_fast');
             sendFatigueEvent('speed_change', 0, 2.0);
-            statusEl.textContent = '🐇 Speed: 2×';
+            statusEl.textContent = ' Speed: 2×';
         }
     </script>
 </body>

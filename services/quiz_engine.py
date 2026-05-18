@@ -21,6 +21,8 @@ class QuizEngine:
 
     def generate_quiz(self, topic: str, difficulty: int = 2) -> dict:
         q_type = "MCQ" if difficulty <= 2 else "open-ended short answer"
+        type_val = "mcq" if difficulty <= 2 else "open_ended"
+        options_val = '["A) ...", "B) ...", "C) ...", "D) ..."]' if difficulty <= 2 else "null"
 
         system_prompt = f"""You are a quiz generator. Generate a single {q_type} question about: {topic}
 Difficulty level: {difficulty}/5
@@ -28,8 +30,8 @@ Difficulty level: {difficulty}/5
 You MUST respond with ONLY valid JSON (no markdown, no extra text):
 {{
   "question": "The quiz question text",
-  "type": "{'mcq' if difficulty <= 2 else 'open_ended'}",
-  "options": {"[\"A) ...\", \"B) ...\", \"C) ...\", \"D) ...\"]" if difficulty <= 2 else "null"},
+  "type": "{type_val}",
+  "options": {options_val},
   "correct_answer": "The correct answer",
   "explanation": "Brief explanation of why this is correct"
 }}"""
